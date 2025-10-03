@@ -1,0 +1,78 @@
+#!/bin/bash
+#
+# buildme — build and install Slurm from a tarball
+# Usage: ./buildme <version>
+#
+set -e
+
+##############################
+# Variables (edit as needed)
+##############################
+
+SLURMVER=$1                    # Version number passed as argument (e.g. 24.11.5)
+MAKE_J=2                       # Number of CPU cores to use for parallel compilation
+TODAY=$(date +%Y%m%d)          # Date tag to distinguish builds
+SLURM_DESTDIR="/opt/slurm/${SLURMVER}-${TODAY}"   # Install location
+TARBALL="slurm-${SLURMVER}.tar.bz2"            # Expected source tarball
+
+##############################
+# Argument check
+##############################
+
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <version>"
+    exit 1
+fi
+
+##############################
+# Safety check: avoid clobbering
+##############################
+
+if [ -d "$SLURM_DESTDIR" ]; then
+    echo "The destination slurm directory '$SLURM_DESTDIR' already exists!"
+    read -p "Press 'y' to confirm: " user_input
+    if [ "$user_input" != "y" ]; then
+        exit 1
+    fi
+fi
+
+##############################
+# Prepare working directory
+##############################
+
+# Extract source if not already present
+if [ ! -d "slurm-${SLURMVER}" ]; then
+    echo "No slurm source detected, extracting..."
+    tar -xf "$TARBALL"
+fi
+
+##############################
+# Configure, build, and install
+##############################
+
+echo "Building slurm from source"
+cd "slurm-${SLURMVER}"
+
+# Ensure pam module directory exists before configure
+mkdir -p "${SLURM_DESTDIR}/lib64/security"
+
+make clean || true
+./configure \
+    --without-shared-libslurm \
+    --with-munge \
+    --with-hwloc \
+    --with-pmix \
+    --with-jwt \
+    --with-json \
+    --enable-slurmrestd \
+    --prefix="$SLURM_DESTDIR" \
+    --with-ucx \
+    --with-lua \
+    --enable-pam \
+    --with-pam_dir="$SLURM_DESTDIR/lib64/security" \
+    --sysconfdir=/etc/slurm
+
+make -j "$MAKE_J"
+make install
+make install-contrib
+
