@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# List of dnf installs for dependencies referenced in the ./configure output.
+
+set -euo pipefail
+
+echo "Starting installation of Slurm build dependencies via dnf..."
+# Install munge-devel for Slurm auth.
+dnf install -y munge munge-devel
+
+# ./configure: error: unable to locate json parser library
+# checking for json installation... 
+dnf install -y json-c-devel
+
+# ./configure: error: unable to locate jwt library
+# checking for jwt.h... no
+# checking for jwt_add_header in -ljwt... no
+dnf install -y libjwt-devel
+
+# ./configure: WARNING: unable to locate NUMA memory affinity functions
+# checking for NUMA memory affinity functions
+dnf install -y numactl-devel
+
+# ./configure: WARNING: unable to locate HTTP Parser library
+# checking for HTTP Parser library
+dnf install -y http-parser-devel
+
+# ./configure: WARNING: unable to locate working lz4 installation
+# checking for working lz4 installation
+dnf install -y lz4-devel
+
+# ./configure: WARNING: Unable to locate HDF5 compilation helper scripts 'h5cc' or 'h5pcc'.
+# checking for h5cc... no
+# checking for h5pcc... no
+dnf install -y hdf5 hdf5-devel
+
+# ./configure: error: unable to locate hwloc installation
+# checking for hwloc installation...
+dnf install -y hwloc hwloc-devel
+
+# ./configure: WARNING: unable to locate libnvidia-ml.so and/or nvml.h
+# checking for nvml.h... no
+# (GPU vendor libs are optional — no package installed here by default)
+
+# ./configure: WARNING: unable to locate librocm_smi64.so and/or rocm_smi.h
+# checking for rocm_smi/rocm_smi.h... no
+# (ROCm/Sysman is optional — not installing by default)
+
+# ./configure: WARNING: unable to locate libze_loader.so and/or ze_api.h
+# checking for ze_api.h... no
+# (oneAPI/Level-Zero optional — not installing by default)
+
+# ./configure: error: No PMIX installation found in /
+# checking for pmix installation...
+dnf install -y pmix-devel
+
+# ./configure: WARNING: unable to locate freeipmi installation (libipmonitoring/libfreeipmi)
+# checking for freeipmi installation... 
+dnf install -y freeipmi-devel
+
+# ./configure: error: unable to locate ucx installation
+# checking for ucx installation... /usr /usr/local /opt/ucx
+dnf install -y ucx ucx-devel
+
+# ./configure: WARNING: unable to locate librdkafka.so and/or rdkafka.h
+# checking for librdkafka installation... checking for rdkafka.h... no
+# librdkafka optional - not installing by default
+
+# ./configure: WARNING: unable to locate 1.5.7+ s2n library
+# checking for s2n installation...
+# s2n optional - not installing by default
+
+# checking for glib-2.0 >= 2.7.1 gthread-2.0... no
+# checking for GLIB - version >= 2.7.1... no
+# Install glib2 devel so GLib test programs can compile/link.
+dnf install -y glib2-devel
+
+# ./configure: WARNING: cannot build sview without gtk library
+# checking for GTK+ - version >= 2.7.1... no
+# GTK2 for sview - not installing by default
+
+# ./configure: error: unable to locate lua package
+# checking whether to enable lua plugin support... checking for lua >= 5.1... no
+dnf install -y lua lua-devel
+
+# ./configure: WARNING: unable to build man page html files without man2html
+# checking whether man2html is available... checking for man2html... no
+dnf install -y man2html
+
+# ./configure: WARNING: unable to locate/link against libcurl-devel installation
+# checking for curl-config... no
+# checking whether libcurl is usable... no
+dnf install -y libcurl-devel
+
+exit 0
