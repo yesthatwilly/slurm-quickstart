@@ -25,6 +25,19 @@ if [ "$#" -ne 1 ]; then
 fi
 
 ##############################
+# NO SUDO/ROOT
+##############################
+
+if [ "$(id -u)" -eq 0 ]; then
+  if [ -n "${SUDO_USER:-}" ]; then
+    echo "Refusing to run as root via sudo (SUDO_USER=${SUDO_USER})." >&2
+  else
+    echo "Refusing to run as root." >&2
+  fi
+  exit 1
+fi
+
+##############################
 # Safety check: avoid clobbering
 ##############################
 
