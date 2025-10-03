@@ -1,0 +1,30 @@
+#!/bin/bash
+# ------------------------------------------------------------------
+# Install slurmdbd.conf and slurmdbd.service
+# ------------------------------------------------------------------
+
+set -e
+
+# Copy config file
+cp ./slurmdbd.conf /etc/slurm/slurmdbd.conf
+chown slurm:slurm /etc/slurm/slurmdbd.conf
+chmod 600 /etc/slurm/slurmdbd.conf
+
+# Copy systemd unit file
+cp ./slurmdbd.service /etc/systemd/system/slurmdbd.service
+
+# Reload systemd so it sees the new unit
+systemctl daemon-reload
+
+# Check for slurmdbd binary before enabling service
+if [ -x /opt/slurm/current/sbin/slurmdbd ]; then
+    echo "Found /opt/slurm/current/sbin/slurmdbd"
+    echo "Enabling and starting slurmdbd..."
+    systemctl enable --now slurmdbd
+    echo "slurmdbd started successfully."
+else
+    echo "WARNING: /opt/slurm/current/sbin/slurmdbd not found."
+    echo "You likely need to create a symlink to your installed Slurm version, e.g.:"
+    echo "  ln -s /opt/slurm/25.05.3-20251003 /opt/slurm/current"
+    echo "Once the symlink exists, rerun: systemctl enable --now slurmdbd"
+fi
