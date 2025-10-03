@@ -1,0 +1,74 @@
+#!/bin/bash
+# -------------------------------------------------------------------
+# Slurm Pre-Build Environment Setup Script
+# -------------------------------------------------------------------
+
+set -e  # Exit immediately on error
+
+echo "=== Creating Slurm system group and user ==="
+
+# Create the 'slurm' group (only if GID 600 is not already in use)
+if ! getent group 600 >/dev/null; then
+    groupadd -g 600 slurm
+    echo "Group 'slurm' created (GID 600)."
+else
+    echo "Group with GID 600 already exists. Skipping group creation."
+fi
+
+# Create the 'slurm' user (only if UID 600 is not already in use)
+if ! id -u 600 >/dev/null 2>&1; then
+    useradd -u 600 -g 600 -d /var/spool/slurmd -s /bin/false slurm
+    echo "User 'slurm' created (UID 600)."
+else
+    echo "User with UID 600 already exists. Skipping user creation."
+fi
+
+# -------------------------------------------------------------------
+# Directory preparation
+# -------------------------------------------------------------------
+
+echo "=== Preparing Slurm directories ==="
+
+# Slurm installation directory
+mkdir -p /opt/slurm
+chown -R slurm:slurm /opt/slurm
+
+# Slurm configuration directory
+mkdir -p /etc/slurm
+chown -R slurm:slurm /etc/slurm
+
+# Slurm logging directory
+mkdir -p /var/log/slurm
+touch /var/log/slurm/slurmdbd.log
+chown -R slurm:slurm /var/log/slurm
+
+# Slurm runtime (PID) directory
+mkdir -p /var/run/slurm
+touch /var/run/slurm/slurmdbd.pid
+chown slurm:slurm /var/run/slurm/slurmdbd.pid
+
+echo "Directory setup complete."
+
+# -------------------------------------------------------------------
+# MUNGE initialization
+# -------------------------------------------------------------------
+
+echo "=== Initializing MUNGE authentication service ==="
+
+# Generate MUNGE key (skip if already exists)
+if [ ! -f /etc/munge/munge.key ]; then
+    create-munge-key
+    echo "MUNGE key generated."
+else
+    echo "MUNGE key already exists. Skipping regeneration."
+fi
+
+# Ensure proper permissions for the key and directory
+chown -R munge:munge /etc/munge /var/lib/munge /var/log/munge
+chmod 700 /etc/munge /var/lib/munge /var/log/munge
+
+# Enable and start the MUNGE service
+systemctl enable --now munge
+systemctl status munge --no-pager
+
+echo "=== Slurm environment pre-build setup finished ==="
