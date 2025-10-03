@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Install MariaDB server
+echo "Installing MariaDB server..."
+dnf install -y mariadb-server
+
+# Enable and start the service
+echo "Enabling and starting MariaDB service..."
+systemctl enable --now mariadb
+
+# Prompt for database user password (hidden input)
+read -s -p "Enter password for DB user 'slurm': " SLURMDBPW
+echo    # ensure newline after password prompt
+
+# Configure the database and user
+echo "Configuring MariaDB for Slurm accounting..."
+sudo mysql <<SQL
+CREATE DATABASE IF NOT EXISTS slurm_acct_db;
+CREATE USER IF NOT EXISTS 'slurm'@'localhost' IDENTIFIED BY '${SLURMDBPW}';
+GRANT ALL PRIVILEGES ON slurm_acct_db.* TO 'slurm'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+
+echo "MariaDB setup complete."
+
+# Test database connection
+echo "Testing connection to 'slurm_acct_db' as user 'slurm'..."
+mysql -u slurm -p"${SLURMDBPW}" -h 127.0.0.1 -D slurm_acct_db -e "SHOW TABLES;"
+
+echo "Database test finished (empty result set is expected)."
