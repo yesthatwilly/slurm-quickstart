@@ -32,7 +32,7 @@ echo "=== Preparing Slurm directories ==="
 # Slurm installation directory
 mkdir -p /opt/slurm
 chown -R slurm:rocky /opt/slurm
-chmod g+w /opt/slurm
+chmod g+rwx /opt/slurm
 
 # Slurm configuration directory
 mkdir -p /etc/slurm
