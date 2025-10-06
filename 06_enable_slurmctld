@@ -10,6 +10,30 @@ cp ./slurm.conf /etc/slurm/slurm.conf
 chown slurm:slurm /etc/slurm/slurm.conf
 chmod 660 /etc/slurm/slurm.conf
 
+# Determine local hostname (short form)
+HOSTNAME=$(hostname -s)
+
+# Get IPv4 address for eth0
+IPADDR=$(ip -4 addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1)
+
+# Ensure both values were retrieved
+if [[ -z "$HOSTNAME" || -z "$IPADDR" ]]; then
+    echo "Error: could not determine hostname or IP for eth0."
+    exit 1
+fi
+
+# File in current directory
+CONF="/etc/slurm/slurm.conf"
+
+# Replace existing SlurmctldHost line or append if missing
+if grep -q '^SlurmctldHost=' "$CONF"; then
+    sed -i "s|^SlurmctldHost=.*|SlurmctldHost=${HOSTNAME}(${IPADDR})|" "$CONF"
+else
+    echo "SlurmctldHost=${HOSTNAME}(${IPADDR})" >> "$CONF"
+fi
+
+echo "Updated SlurmctldHost to ${HOSTNAME}(${IPADDR}) in $(realpath "$CONF")"
+
 # Copy systemd unit file
 cp ./slurmctld.service /etc/systemd/system/slurmctld.service
 
