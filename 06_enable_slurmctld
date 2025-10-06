@@ -1,0 +1,30 @@
+#!/bin/bash
+# ------------------------------------------------------------------
+# Install slurm.conf and slurmctld.service
+# ------------------------------------------------------------------
+
+set -e
+
+# Copy config file
+cp ./slurm.conf /etc/slurm/slurm.conf
+chown slurm:slurm /etc/slurm/slurm.conf
+chmod 660 /etc/slurm/slurm.conf
+
+# Copy systemd unit file
+cp ./slurmctld.service /etc/systemd/system/slurmctld.service
+
+# Reload systemd so it sees the new unit
+systemctl daemon-reload
+
+# Check for slurmdbd binary before enabling service
+if [ -x /opt/slurm/current/sbin/slurmctld ]; then
+    echo "Found /opt/slurm/current/sbin/slurmctld"
+    echo "Enabling and starting slurmctld..."
+    systemctl enable --now slurmctld
+    echo "slurmctld enabled successfully."
+else
+    echo "WARNING: /opt/slurm/current/sbin/slurmctld not found."
+    echo "You likely need to create a symlink to your installed Slurm version, e.g.:"
+    echo "  ln -s /opt/slurm/25.05.3-20251003 /opt/slurm/current"
+    echo "Once the symlink exists, rerun: systemctl enable --now slurmctld"
+fi
