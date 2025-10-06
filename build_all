@@ -33,6 +33,18 @@ echo "=== Step 04: Build Slurm (runs as normal user) ==="
 # Build step intentionally runs without sudo; pass through the argument supplied to build_all
 bash ./04_build_slurm "${BUILD_ARG}"
 
+echo "=== Step 04b: Create /opt/slurm/current symlink ==="
+# Detect the latest Slurm build directory (based on version + date)
+SLURM_BASE="/opt/slurm"
+LATEST_BUILD=$(ls -1d ${SLURM_BASE}/${BUILD_ARG}-* 2>/dev/null | sort -V | tail -n 1)
+
+if [ -z "$LATEST_BUILD" ]; then
+  echo "WARNING: Could not find a Slurm install directory matching ${BUILD_ARG}-* under ${SLURM_BASE}" >&2
+else
+  echo "Creating symlink /opt/slurm/current -> $LATEST_BUILD"
+  sudo ln -sfn "$LATEST_BUILD" "${SLURM_BASE}/current"
+fi
+
 echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
 # Enable and start slurmdbd as root
 sudo bash ./05_enable_slurmdbd
