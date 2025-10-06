@@ -1,0 +1,44 @@
+#!/bin/bash
+# build_all - run the quickstart steps in order
+# Usage: ./build_all <arg-for-04_build_slurm>
+# All steps run with sudo except step 04 (04_build_slurm) which is run as the calling user
+
+set -euo pipefail
+
+# Ensure an argument was provided for step 04
+if [ "${1:-}" = "" ]; then
+  echo "Usage: $0 <arg-for-04_build_slurm>"
+  echo "Example: $0 24.11.6"
+  exit 2
+fi
+
+BUILD_ARG="$1"
+
+# Make sure the scripts are executable (idempotent)
+chmod +x 01_install_deps 02_install_mariadb 03_prepare_system 04_build_slurm 05_enable_slurmdbd 06_enable_slurmctld
+
+echo "=== Step 01: Install dependencies (runs as sudo) ==="
+# Run the dependency installation as root
+sudo bash ./01_install_deps
+
+echo "=== Step 02: Install MariaDB (runs as sudo) ==="
+# Run the MariaDB installation as root
+sudo bash ./02_install_mariadb
+
+echo "=== Step 03: Prepare system (runs as sudo) ==="
+# System preparation (tune sysctl, create users, etc.) as root
+sudo bash ./03_prepare_system
+
+echo "=== Step 04: Build Slurm (runs as normal user) ==="
+# Build step intentionally runs without sudo; pass through the argument supplied to build_all
+bash ./04_build_slurm "${BUILD_ARG}"
+
+echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
+# Enable and start slurmdbd as root
+sudo bash ./05_enable_slurmdbd
+
+echo "=== Step 06: Enable slurmctld (runs as sudo) ==="
+# Enable and start slurmctld as root
+sudo bash ./06_enable_slurmctld
+
+echo "=== All steps completed successfully ==="
