@@ -8,9 +8,8 @@ dnf install -y mariadb-server
 echo "Enabling and starting MariaDB service..."
 systemctl enable --now mariadb
 
-# Prompt for database user password (hidden input)
-read -s -p "Enter password for DB user 'slurm': " SLURMDBPW
-echo    # ensure newline after password prompt
+# Fixed password for DB user 'slurm'
+SLURMDBPW="lciadvPW"
 
 # Configure the database and user
 echo "Configuring MariaDB for Slurm accounting..."
