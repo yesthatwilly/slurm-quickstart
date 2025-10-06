@@ -17,7 +17,7 @@ fi
 
 # Create the 'slurm' user (only if UID 600 is not already in use)
 if ! id -u 600 >/dev/null 2>&1; then
-    useradd -u 600 -g 600 -d /var/spool/slurm -s /bin/false slurm
+    useradd -u 600 -g 600 -d /opt/slurm -s /bin/false slurm
     echo "User 'slurm' created (UID 600)."
 else
     echo "User with UID 600 already exists. Skipping user creation."
@@ -49,9 +49,10 @@ touch /var/run/slurm/slurmdbd.pid
 chown slurm:slurm /var/run/slurm/slurmdbd.pid
 
 # Slurm spool directory
-mkdir -p /var/spool/slurmctld
-chown -R slurm:slurm /var/spool/slurmctld
-chmod go+w /var/spool
+mkdir -p /var/spool/slurmd.spool
+mkdir -p /var/spool/slurm.state
+chown -R slurm:slurm /var/spool/slurmd.spool
+chown -R slurm:slurm /var/spool/slurm.state
 
 echo "Directory setup complete."
 
