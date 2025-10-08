@@ -15,27 +15,25 @@ fi
 BUILD_ARG="$1"
 
 # Make sure the scripts are executable (idempotent)
-chmod +x 01_install_deps 02_install_mariadb 03_prepare_system 04_build_slurm 05_enable_slurmdbd 06_enable_slurmctld
+chmod +x 01_install_deps 02_install_mariadb 03_prepare_system 04_build_slurm 05_enable_slurmdbd 06_enable_slurmctld 07_enable_slurmd
 
 echo "=== Step 01: Install dependencies (runs as sudo) ==="
-# Run the dependency installation as root
 sudo bash ./01_install_deps
 
 echo "=== Step 02: Install MariaDB (runs as sudo) ==="
-# Run the MariaDB installation as root
 sudo bash ./02_install_mariadb
 
 echo "=== Step 03: Prepare system (runs as sudo) ==="
-# System preparation (tune sysctl, create users, etc.) as root
 sudo bash ./03_prepare_system
 
 echo "=== Step 04: Build Slurm (runs as normal user) ==="
-# Build step intentionally runs without sudo; pass through the argument supplied to build_all
 bash ./04_build_slurm "${BUILD_ARG}"
 
 echo "=== Step 04b: Create /opt/slurm/current symlink ==="
-# Detect the latest Slurm build directory (based on version + date)
 SLURM_BASE="/opt/slurm"
+sudo mkdir -p $SLURM_BASE
+sudo chown -R slurm:slurm $SLURM_BASE
+
 LATEST_BUILD=$(ls -1d ${SLURM_BASE}/${BUILD_ARG}-* 2>/dev/null | sort -V | tail -n 1)
 
 if [ -z "$LATEST_BUILD" ]; then
@@ -45,12 +43,18 @@ else
   sudo ln -sfn "$LATEST_BUILD" "${SLURM_BASE}/current"
 fi
 
-echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
-# Enable and start slurmdbd as root
-sudo bash ./05_enable_slurmdbd
+# Determine host role
+HOSTNAME=$(hostname)
+if [[ "$HOSTNAME" == *head* ]]; then
+  echo "=== Hostname contains 'head': enabling slurmdbd and slurmctld ==="
+  echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
+  sudo bash ./05_enable_slurmdbd
 
-echo "=== Step 06: Enable slurmctld (runs as sudo) ==="
-# Enable and start slurmctld as root
-sudo bash ./06_enable_slurmctld
+  echo "=== Step 06: Enable slurmctld (runs as sudo) ==="
+  sudo bash ./06_enable_slurmctld
+else
+  echo "=== Hostname does not contain 'head': enabling slurmd ==="
+  sudo bash ./07_enable_slurmd
+fi
 
 echo "=== All steps completed successfully ==="
