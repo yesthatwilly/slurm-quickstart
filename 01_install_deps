@@ -68,6 +68,7 @@ dnf install -y ucx ucx-devel
 # ./configure: WARNING: unable to locate 1.5.7+ s2n library
 # checking for s2n installation...
 # s2n optional - not installing by default
+# dnf install -y s2n-tls s2n-tls-devel
 
 # checking for glib-2.0 >= 2.7.1 gthread-2.0... no
 # checking for GLIB - version >= 2.7.1... no
