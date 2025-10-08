@@ -95,6 +95,6 @@ dnf install -y libcurl-devel
 # checking for dbus-1 >= 1.11.16... no
 # configure: error: unable to locate dbus-1 development headers >= 1.11.16
 # required for cgroups/v2!
-dnf install dbus dbus-devel libbpf libbpf-devel
+dnf install -y dbus dbus-devel libbpf libbpf-devel
 
 exit 0
