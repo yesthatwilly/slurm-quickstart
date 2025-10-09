@@ -8,7 +8,7 @@ set -e
 # Copy config file
 cp ./slurm.conf /etc/slurm/slurm.conf
 chown slurm:slurm /etc/slurm/slurm.conf
-chmod 660 /etc/slurm/slurm.conf
+chmod 664 /etc/slurm/slurm.conf
 
 # Determine local hostname (short form)
 HOSTNAME=$(hostname -s)
