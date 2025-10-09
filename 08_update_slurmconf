@@ -1,12 +1,4 @@
 #!/usr/bin/env bash
-# update_slurm_nodes.sh
-# Find lci-compute* entries in /etc/hosts and update /etc/slurm/slurm.conf:
-#  - SlurmctldHost=<hostname>(<ip>)
-#  - NodeName=...  (compute list)
-#  - PartitionName=general ... Nodes=...
-#
-# Creates a backup of slurm.conf before editing.
-
 set -euo pipefail
 
 SLURM_CONF="/etc/slurm/slurm.conf"
@@ -15,19 +7,11 @@ BACKUP_DIR="/var/backups"
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUP_FILE="${BACKUP_DIR}/slurm.conf.${TIMESTAMP}.bak"
 
-# ensure we can write the slurm.conf
-if [[ ! -w "${SLURM_CONF}" && ! -w "$(dirname "${SLURM_CONF}")" ]]; then
-  echo "ERROR: Can't write to ${SLURM_CONF}. Run as root." >&2
-  exit 1
-fi
-
 mkdir -p "${BACKUP_DIR}"
 cp -a "${SLURM_CONF}" "${BACKUP_FILE}"
 echo "Backup of ${SLURM_CONF} saved to ${BACKUP_FILE}"
 
-# 1) Determine current host shortname and primary IPv4 (non-loopback)
 HOSTSHORT="$(hostname -s)"
-# pick first non-loopback IPv4 address that's not docker/veth; try ip command
 IPADDR="$(ip -4 -o addr show scope global 2>/dev/null \
          | awk '{print $4}' | cut -d/ -f1 | grep -v '^127\.' | head -n1 || true)"
 
@@ -36,10 +20,6 @@ if [[ -z "${IPADDR}" ]]; then
   exit 1
 fi
 
-echo "Using hostname '${HOSTSHORT}' and IP '${IPADDR}' for SlurmctldHost"
-
-# 2) Parse /etc/hosts and extract all hostnames that start with lci-compute
-#    We search all fields in each non-comment, non-empty line.
 mapfile -t COMPUTE_HOSTS < <(
   awk '
     $0 ~ /^[[:space:]]*#/ { next }
@@ -57,7 +37,6 @@ if [[ ${#COMPUTE_HOSTS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# 3) Group by base (strip last -NUMBER) and collect numeric suffixes per base
 declare -A nums_by_base
 for hn in "${COMPUTE_HOSTS[@]}"; do
   if [[ "${hn}" =~ ^(.+)-([0-9]+)$ ]]; then
@@ -65,43 +44,29 @@ for hn in "${COMPUTE_HOSTS[@]}"; do
     num="${BASH_REMATCH[2]}"
     nums_by_base["$base"]+="${num} "
   else
-    # If there is no trailing number, treat as numless (use whole name)
-    nums_by_base["$hn"]+=""  # present but empty numeric list
+    nums_by_base["$hn"]+=""
   fi
 done
 
-# 4) For each base, compress numeric list into [min-max] preserving width.
-#    If no numeric suffixes found for a base, keep the literal name.
 parts=()
 for base in "${!nums_by_base[@]}"; do
-  nums_str="${nums_by_base[$base]}"
-  # trim
-  nums_str="$(echo "${nums_str}" | xargs || true)"
+  nums_str="$(echo "${nums_by_base[$base]}" | xargs || true)"
   if [[ -z "${nums_str}" ]]; then
-    # no numeric suffixes -> use the literal name
     parts+=("${base}")
     continue
   fi
-  # convert to array of numbers and sort uniquely (preserve leading zeros by width)
   read -r -a arr <<< "${nums_str}"
-  # determine width from first element (assume consistent)
   width="${#arr[0]}"
-  # numeric sort but we also want to preserve zero-padding width when printing
-  # create list of ints
   IFS=$'\n' sorted_unique=($(printf '%s\n' "${arr[@]}" | sort -n -u))
   unset IFS
 
-  # if only one element -> print base-[NN]
   if [[ ${#sorted_unique[@]} -eq 1 ]]; then
     n="${sorted_unique[0]}"
-    # preserve width
     formatted="$(printf "%0${width}d" "${n}")"
     parts+=("${base}-[${formatted}]")
     continue
   fi
 
-  # Check if sequence is contiguous; if it is, print min-max; otherwise, create comma list
-  # Build contiguous ranges
   ranges=()
   start="${sorted_unique[0]}"
   prev="${start}"
@@ -111,7 +76,6 @@ for base in "${!nums_by_base[@]}"; do
       prev="$cur"
       continue
     else
-      # close previous range
       if (( start == prev )); then
         ranges+=( "$(printf "%0${width}d" "${start}")" )
       else
@@ -121,70 +85,46 @@ for base in "${!nums_by_base[@]}"; do
       prev="$cur"
     fi
   done
-  # close last
   if (( start == prev )); then
     ranges+=( "$(printf "%0${width}d" "${start}")" )
   else
     ranges+=( "$(printf "%0${width}d" "${start}")-$(printf "%0${width}d" "${prev}")" )
   fi
 
-  # If ranges are more than one, create bracket with comma separated values
   if (( ${#ranges[@]} == 1 )); then
     parts+=( "${base}-[${ranges[0]}]" )
   else
-    # join with commas
     IFS=, joined="${ranges[*]}"
     unset IFS
     parts+=( "${base}-[${joined}]" )
   fi
 done
 
-# Sort parts to make output deterministic
 IFS=, sorted_parts="$(printf "%s\n" "${parts[@]}" | sort | paste -sd, -)"
 unset IFS
-
 NODE_EXPR="${sorted_parts}"
 echo "Computed node expression(s): ${NODE_EXPR}"
 
-# 5) Update slurm.conf:
-#    - SlurmctldHost=HOST(IP)
-#    - Replace NodeName=... line that starts with NodeName=lci-compute with new NodeName line
-#    - Replace Nodes=... (under PartitionName=general) occurrence(s) that mention lci-compute
-
-# SlurmctldHost replacement (single-line)
-# Use an atomic temp file to avoid partial writes
+# atomic edit
 tmpfile="$(mktemp)"
 cp "${SLURM_CONF}" "${tmpfile}.orig"
 
-# Replace SlurmctldHost=... with the hostname(IP) format.
-# Ensure we anchor at line start.
+# SlurmctldHost replacement (single-line)
 sed -E "s|^SlurmctldHost=.*|SlurmctldHost=${HOSTSHORT}(${IPADDR})|" "${tmpfile}.orig" > "${tmpfile}"
 
-# Replace NodeName=... line(s) that start with NodeName=lci-compute
-# We replace only the lines that begin with "NodeName=" and have "lci-compute" immediately after =
-# and write a trailing backslash as in original
-sed -E -i "s|^NodeName=lci-compute[^\\]*\\\\$|NodeName=${NODE_EXPR} \\\\|g" "${tmpfile}"
+# Replace NodeName=... (compute stanza) — preserve indentation and add continuation backslash
+sed -E -i "s|^([[:space:]]*)NodeName=lci-compute.*|\1NodeName=${NODE_EXPR} \\\\|g" "${tmpfile}"
 
-# Also handle case where NodeName=lci-compute line does NOT have a trailing backslash
-sed -E -i "s|^NodeName=lci-compute.*$|NodeName=${NODE_EXPR}|g" "${tmpfile}"
+# Replace Nodes=... under partitions — preserve indentation and add continuation backslash
+sed -E -i "s|^([[:space:]]*)Nodes=lci-compute.*|\1Nodes=${NODE_EXPR} \\\\|g" "${tmpfile}"
 
-# Replace Nodes=... occurrences that contain lci-compute with the NODE_EXPR
-# This keeps surrounding whitespace and trailing backslashes intact.
-sed -E -i "s|(Nodes=)lci-compute[^[:space:]\\]*|\1${NODE_EXPR}|g" "${tmpfile}"
-
-# If everything looks ok, move back into place
+# Move it into place and set ownership
 mv "${tmpfile}" "${SLURM_CONF}"
 chown slurm:slurm "${SLURM_CONF}"
 echo "Updated ${SLURM_CONF}"
 
-# 6) Report diff (succinct)
 echo
-echo "Changes summary (showing changed lines from the old config):"
-echo "----"
-grep -n -E "SlurmctldHost|^NodeName=|Nodes=" "${SLURM_CONF}" || true
-echo "----"
-echo "Original backup is ${BACKUP_FILE}"
+echo "Changed lines (quick check):"
+grep -n -E "^[[:space:]]*SlurmctldHost|^[[:space:]]*NodeName=|^[[:space:]]*Nodes=" "${SLURM_CONF}" || true
 echo
-echo "Done."
-
-exit 0
+echo "Backup kept at ${BACKUP_FILE}"
