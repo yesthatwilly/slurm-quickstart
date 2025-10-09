@@ -1,6 +1,6 @@
 #!/bin/bash
 # ------------------------------------------------------------------
-# Update slurmd.service with correct conf-server IP and install it
+# Update slurmd.service with correct conf-server IP (head node) and install it
 # ------------------------------------------------------------------
 
 set -euo pipefail
@@ -9,12 +9,19 @@ HOSTS_FILE="/etc/hosts"
 SERVICE_FILE="./slurmd.service"
 TMP_FILE="$(mktemp)"
 
-# Extract the first 192.* IP associated with this hostname
-LOCAL_HOSTNAME="$(hostname -s)"
-NEW_IP="$(awk -v host="$LOCAL_HOSTNAME" '$1 ~ /^192\./ && $2 == host {print $1}' "$HOSTS_FILE")"
+# Prefer the first 192.* IP whose hostname contains "head"
+NEW_IP="$(awk '($2 ~ /head/ && $1 ~ /^192\./){print $1; exit}' "$HOSTS_FILE")"
+
+# If none found, fall back to any IP whose hostname contains "head"
+if [[ -z "$NEW_IP" ]]; then
+    NEW_IP="$(awk '($2 ~ /head/){print $1; exit}' "$HOSTS_FILE")"
+    if [[ -n "$NEW_IP" ]]; then
+        echo "Note: no 192.* head IP found in $HOSTS_FILE; using $NEW_IP" >&2
+    fi
+fi
 
 if [[ -z "$NEW_IP" ]]; then
-    echo "Error: Could not find a 192.* address for hostname '$LOCAL_HOSTNAME' in $HOSTS_FILE" >&2
+    echo "Error: Could not find an address for a host containing 'head' in $HOSTS_FILE" >&2
     exit 1
 fi
 
