@@ -44,15 +44,6 @@ cp ./slurmctld.service /etc/systemd/system/slurmctld.service
 # Reload systemd so it sees the new unit
 systemctl daemon-reload
 
-# Make these files accessible without direct pathing it
-{
-  echo ''
-  echo '# --- Slurm environment setup ---'
-  echo 'export PATH=/opt/slurm/current/bin:$PATH'
-} >> /etc/profile.d/slurm.sh
-
-chmod 644 /etc/profile.d/slurm.sh
-
 # Check for slurmdbd binary before enabling service
 if [ -x /opt/slurm/current/sbin/slurmctld ]; then
     echo "Found /opt/slurm/current/sbin/slurmctld"
