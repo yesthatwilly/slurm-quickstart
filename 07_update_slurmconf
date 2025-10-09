@@ -122,10 +122,12 @@ sed -E -i "s|^([[:space:]]*)Nodes=lci-compute.*|\1Nodes=${NODE_EXPR} \\\\|g" "${
 mv "${tmpfile}" "${SLURM_CONF}"
 chown slurm:slurm "${SLURM_CONF}"
 echo "Updated ${SLURM_CONF}"
-scontrol reconfig
 
 echo
 echo "Changed lines (quick check):"
 grep -n -E "^[[:space:]]*SlurmctldHost|^[[:space:]]*NodeName=|^[[:space:]]*Nodes=" "${SLURM_CONF}" || true
 echo
 echo "Backup kept at ${BACKUP_FILE}"
+
+# attempt scontrol reconfig
+/opt/slurm/current/bin/scontrol reconfig
