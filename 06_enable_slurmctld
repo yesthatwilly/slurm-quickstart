@@ -10,6 +10,10 @@ cp ./slurm.conf /etc/slurm/slurm.conf
 chown slurm:rocky /etc/slurm/slurm.conf
 chmod 664 /etc/slurm/slurm.conf
 
+touch /etc/slurm/job_container.conf
+chown slurm:rocky /etc/slurm/job_container.conf
+chmod 664 /etc/slurm/job_container.conf
+
 # Determine local hostname (short form)
 HOSTNAME=$(hostname -s)
 
