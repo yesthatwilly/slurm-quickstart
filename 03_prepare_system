@@ -78,4 +78,13 @@ chmod 700 /etc/munge /var/lib/munge /var/log/munge
 systemctl enable --now munge
 systemctl status munge --no-pager
 
+# Make these files accessible without direct pathing it
+{
+  echo ''
+  echo '# --- Slurm environment setup ---'
+  echo 'export PATH=/opt/slurm/current/bin:$PATH'
+} >> /etc/profile.d/slurm.sh
+
+chmod 644 /etc/profile.d/slurm.sh
+
 echo "=== Slurm environment pre-build setup finished ==="
