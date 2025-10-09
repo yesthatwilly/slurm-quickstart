@@ -121,6 +121,7 @@ sed -E -i "s|^([[:space:]]*)Nodes=lci-compute.*|\1Nodes=${NODE_EXPR} \\\\|g" "${
 # Move it into place and set ownership
 mv "${tmpfile}" "${SLURM_CONF}"
 chown slurm:slurm "${SLURM_CONF}"
+chmod 644 "${SLURM_CONF}"
 echo "Updated ${SLURM_CONF}"
 
 echo
