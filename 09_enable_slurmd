@@ -1,0 +1,25 @@
+#!/bin/bash
+# ------------------------------------------------------------------
+# Install slurmd.service
+# ------------------------------------------------------------------
+
+set -e
+
+# Copy systemd unit file
+cp ./slurmd.service /etc/systemd/system/slurmd.service
+
+# Reload systemd so it sees the new unit
+systemctl daemon-reload
+
+# Check for slurmd binary before enabling service
+if [ -x /opt/slurm/current/sbin/slurmd ]; then
+    echo "Found /opt/slurm/current/sbin/slurmd"
+    echo "Enabling and starting slurmd..."
+    systemctl enable --now slurmd
+    echo "slurmd enabled successfully."
+else
+    echo "WARNING: /opt/slurm/current/sbin/slurmd not found."
+    echo "You likely need to create a symlink to your installed Slurm version, e.g.:"
+    echo "  ln -s /opt/slurm/25.05.3-20251003 /opt/slurm/current"
+    echo "Once the symlink exists, rerun: systemctl enable --now slurmd"
+fi
