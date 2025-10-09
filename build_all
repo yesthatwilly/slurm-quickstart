@@ -32,7 +32,7 @@ bash ./04_build_slurm "${BUILD_ARG}"
 echo "=== Step 04b: Create /opt/slurm/current symlink ==="
 SLURM_BASE="/opt/slurm"
 sudo mkdir -p $SLURM_BASE
-sudo chown -R slurm:slurm $SLURM_BASE
+sudo chown -R slurm:rocky $SLURM_BASE
 
 LATEST_BUILD=$(ls -1d ${SLURM_BASE}/${BUILD_ARG}-* 2>/dev/null | sort -V | tail -n 1)
 
@@ -44,17 +44,17 @@ else
 fi
 
 # Determine host role
-HOSTNAME=$(hostname)
-if [[ "$HOSTNAME" == *head* ]]; then
-  echo "=== Hostname contains 'head': enabling slurmdbd and slurmctld ==="
-  echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
-  sudo bash ./05_enable_slurmdbd
-
-  echo "=== Step 06: Enable slurmctld (runs as sudo) ==="
-  sudo bash ./06_enable_slurmctld
-else
-  echo "=== Hostname does not contain 'head': enabling slurmd ==="
-  sudo bash ./07_enable_slurmd
-fi
+#HOSTNAME=$(hostname)
+#if [[ "$HOSTNAME" == *head* ]]; then
+#  echo "=== Hostname contains 'head': enabling slurmdbd and slurmctld ==="
+#  echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
+#  sudo bash ./05_enable_slurmdbd
+#
+#  echo "=== Step 06: Enable slurmctld (runs as sudo) ==="
+#  sudo bash ./06_enable_slurmctld
+#else
+#  echo "=== Hostname does not contain 'head': enabling slurmd ==="
+#  sudo bash ./07_enable_slurmd
+#fi
 
 echo "=== All steps completed successfully ==="
