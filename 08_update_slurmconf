@@ -155,6 +155,7 @@ echo "Computed node expression(s): ${NODE_EXPR}"
 # Use an atomic temp file to avoid partial writes
 tmpfile="$(mktemp)"
 cp "${SLURM_CONF}" "${tmpfile}.orig"
+chown slurm:slurm "${SLURM_CONF}"
 
 # Replace SlurmctldHost=... with the hostname(IP) format.
 # Ensure we anchor at line start.
