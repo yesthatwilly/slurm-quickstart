@@ -1,12 +1,43 @@
 #!/bin/bash
 # ------------------------------------------------------------------
+# Update slurmd.service with correct conf-server IP and install it
+# ------------------------------------------------------------------
+
+set -euo pipefail
+
+HOSTS_FILE="/etc/hosts"
+SERVICE_FILE="./slurmd.service"
+TMP_FILE="$(mktemp)"
+
+# Extract the first 192.* IP associated with this hostname
+LOCAL_HOSTNAME="$(hostname -s)"
+NEW_IP="$(awk -v host="$LOCAL_HOSTNAME" '$1 ~ /^192\./ && $2 == host {print $1}' "$HOSTS_FILE")"
+
+if [[ -z "$NEW_IP" ]]; then
+    echo "Error: Could not find a 192.* address for hostname '$LOCAL_HOSTNAME' in $HOSTS_FILE" >&2
+    exit 1
+fi
+
+# Verify that slurmd.service contains the --conf-server flag
+if ! grep -q -- '--conf-server' "$SERVICE_FILE"; then
+    echo "Error: No --conf-server line found in $SERVICE_FILE" >&2
+    exit 1
+fi
+
+# Substitute the IP in the --conf-server argument
+sed -E "s|(--conf-server )[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\1$NEW_IP|" "$SERVICE_FILE" > "$TMP_FILE"
+
+# Replace the original file
+mv "$TMP_FILE" "$SERVICE_FILE"
+
+echo "Updated $SERVICE_FILE to use --conf-server $NEW_IP"
+
+# ------------------------------------------------------------------
 # Install slurmd.service
 # ------------------------------------------------------------------
 
-set -e
-
 # Copy systemd unit file
-cp ./slurmd.service /etc/systemd/system/slurmd.service
+cp "$SERVICE_FILE" /etc/systemd/system/slurmd.service
 
 # Reload systemd so it sees the new unit
 systemctl daemon-reload
