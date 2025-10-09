@@ -1,0 +1,85 @@
+#!/bin/bash
+# 08_deploy_compute.sh
+# Simple loop (not functionalized) to rsync slurm, copy munge.key, and restart munge on all lci-compute* hosts
+set -euo pipefail
+
+HOSTS_FILE="/etc/hosts"
+LOCAL_SLURM_DIR="/opt/slurm"               # directory to rsync (adjust if needed)
+LOCAL_MUNGE_KEY="/etc/munge/munge.key"
+SSH_USER="root"                         # change if you prefer different user
+SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+
+# sanity checks
+if [[ ! -d "$LOCAL_SLURM_DIR" ]]; then
+    echo "Error: local slurm dir '$LOCAL_SLURM_DIR' does not exist." >&2
+    exit 1
+fi
+if [[ ! -f "$LOCAL_MUNGE_KEY" ]]; then
+    echo "Error: local munge key '$LOCAL_MUNGE_KEY' does not exist." >&2
+    exit 1
+fi
+
+THIS_HOST="$(hostname -s)"
+
+# gather compute hosts from /etc/hosts
+mapfile -t COMPUTE_HOSTS < <(awk '
+    $2 ~ /^lci-compute/ { print $2 }
+    { for (i=3; i<=NF; i++) if ($i ~ /^lci-compute/) print $i }
+' "$HOSTS_FILE" | sort -u)
+
+if [[ ${#COMPUTE_HOSTS[@]} -eq 0 ]]; then
+    echo "No lci-compute* hosts found in $HOSTS_FILE" >&2
+    exit 1
+fi
+
+echo "Found compute hosts: ${COMPUTE_HOSTS[*]}"
+
+for host in "${COMPUTE_HOSTS[@]}"; do
+    if [[ "$host" == "$THIS_HOST" || "$host" == "$(hostname -f)" ]]; then
+        echo "Skipping local host: $host"
+        continue
+    fi
+
+    echo
+    echo "=== Processing $host ==="
+
+    # 1) rsync slurm -> /opt/ on remote
+    echo "-> rsync $LOCAL_SLURM_DIR to ${SSH_USER}@${host}:/opt/"
+    rsync -av --progress -e "ssh $SSH_OPTS" "$LOCAL_SLURM_DIR" "${SSH_USER}@${host}:/opt/" || {
+        echo "ERROR: rsync to $host failed" >&2
+        continue
+    }
+
+    # 2) copy munge key
+    echo "-> copying munge key to ${SSH_USER}@${host}:/etc/munge/munge.key"
+    rsync -av --progress -e "ssh $SSH_OPTS" "$LOCAL_MUNGE_KEY" "${SSH_USER}@${host}:/etc/munge/munge.key" || {
+        echo "ERROR: munge key copy to $host failed" >&2
+        continue
+    }
+
+    # 3) remote fix perms, verify md5, and restart munge
+    echo "-> setting remote permissions, verifying md5, and restarting munge"
+    ssh $SSH_OPTS "${SSH_USER}@${host}" bash -eux <<'REMOTE'
+MUNGE_PATH="/etc/munge/munge.key"
+if [ -f "$MUNGE_PATH" ]; then
+    chown munge:munge "$MUNGE_PATH" || true
+    chmod 400 "$MUNGE_PATH" || true
+    echo "Remote md5:"
+    md5sum "$MUNGE_PATH"
+    echo "Restarting munge service..."
+    systemctl restart munge
+    systemctl status munge --no-pager -l | head -n 10
+else
+    echo "remote munge key not found: $MUNGE_PATH" >&2
+    exit 2
+fi
+REMOTE
+
+    echo "Local md5:"
+    md5sum "$LOCAL_MUNGE_KEY" || true
+
+    echo "Done with $host"
+done
+
+echo
+echo "All done."
