@@ -155,7 +155,6 @@ echo "Computed node expression(s): ${NODE_EXPR}"
 # Use an atomic temp file to avoid partial writes
 tmpfile="$(mktemp)"
 cp "${SLURM_CONF}" "${tmpfile}.orig"
-chown slurm:slurm "${SLURM_CONF}"
 
 # Replace SlurmctldHost=... with the hostname(IP) format.
 # Ensure we anchor at line start.
@@ -175,6 +174,7 @@ sed -E -i "s|(Nodes=)lci-compute[^[:space:]\\]*|\1${NODE_EXPR}|g" "${tmpfile}"
 
 # If everything looks ok, move back into place
 mv "${tmpfile}" "${SLURM_CONF}"
+chown slurm:slurm "${SLURM_CONF}"
 echo "Updated ${SLURM_CONF}"
 
 # 6) Report diff (succinct)
