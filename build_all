@@ -15,7 +15,7 @@ fi
 BUILD_ARG="$1"
 
 # Make sure the scripts are executable (idempotent)
-chmod +x 01_install_deps 02_install_mariadb 03_prepare_system 04_build_slurm 05_enable_slurmdbd 06_enable_slurmctld 07_enable_slurmd
+chmod +x 01_install_deps 02_install_mariadb 03_prepare_system 04_build_slurm 05_enable_slurmdbd 06_enable_slurmctld 07_update_slurmconf 09_enable_slurmd
 
 echo "=== Step 01: Install dependencies (runs as sudo) ==="
 sudo bash ./01_install_deps
