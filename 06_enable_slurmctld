@@ -38,6 +38,15 @@ fi
 
 echo "Updated SlurmctldHost to ${HOSTNAME}(${IPADDR}) in $(realpath "$CONF")"
 
+# Replace existing AccountingStorageHost line or append if missing
+if grep -q '^AccountingStorageHost=' "$CONF"; then
+    sed -i "s|^AccountingStorageHost=.*|AccountingStorageHost=${HOSTNAME}|" "$CONF"
+else
+    echo "AccountingStorageHost=${HOSTNAME}" >> "$CONF"
+fi
+
+echo "Updated AccountingStorageHost to ${HOSTNAME} in $(realpath "$CONF")"
+
 # Copy systemd unit file
 cp ./slurmctld.service /etc/systemd/system/slurmctld.service
 
