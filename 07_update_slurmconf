@@ -112,6 +112,16 @@ cp "${SLURM_CONF}" "${tmpfile}.orig"
 # SlurmctldHost replacement (single-line)
 sed -E "s|^SlurmctldHost=.*|SlurmctldHost=${HOSTSHORT}(${IPADDR})|" "${tmpfile}.orig" > "${tmpfile}"
 
+# Ensure AccountingStorageHost is set to the short hostname (no IP)
+if grep -q '^AccountingStorageHost=' "${tmpfile}"; then
+    sed -E -i "s|^AccountingStorageHost=.*|AccountingStorageHost=${HOSTSHORT}|" "${tmpfile}"
+else
+    # keep newline safety
+    printf '\nAccountingStorageHost=%s\n' "${HOSTSHORT}" >> "${tmpfile}"
+fi
+
+echo "Updated AccountingStorageHost to ${HOSTSHORT} in ${tmpfile}"
+
 # Replace NodeName=... (compute stanza) — preserve indentation and add continuation backslash
 sed -E -i "s|^([[:space:]]*)NodeName=lci-compute.*|\1NodeName=${NODE_EXPR} \\\\|g" "${tmpfile}"
 
@@ -130,5 +140,6 @@ grep -n -E "^[[:space:]]*SlurmctldHost|^[[:space:]]*NodeName=|^[[:space:]]*Nodes
 echo
 echo "Backup kept at ${BACKUP_FILE}"
 
-# attempt scontrol reconfig
-/opt/slurm/current/bin/scontrol reconfig
+# restart slurmctld process to use new acct storage host
+systemctl restart slurmctld
+#/opt/slurm/current/bin/scontrol reconfig
