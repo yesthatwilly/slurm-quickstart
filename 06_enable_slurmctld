@@ -49,6 +49,7 @@ echo "Updated AccountingStorageHost to ${HOSTNAME} in $(realpath "$CONF")"
 
 # Copy systemd unit file
 cp ./slurmctld.service /etc/systemd/system/slurmctld.service
+cp ./slurmrestd.service /etc/systemd/system/slurmrestd.service
 
 # Reload systemd so it sees the new unit
 systemctl daemon-reload
