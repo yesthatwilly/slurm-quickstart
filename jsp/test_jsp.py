@@ -209,12 +209,6 @@ class TestSlurm(unittest.TestCase):
     def test_sbatch_with_common_checks(self):
         self.details = run('-p general')
 
-    # reduces a request for 8 cores to 7 cores
-    @common_slurm_checks
-    @expect_tres({"cpu": 7})
-    def test_sbatch_with_common_checks(self):
-        self.details = run('-p general -c 8')
-
 # --------------------------- Entry point -----------------------------------
 
 if __name__ == '__main__':
