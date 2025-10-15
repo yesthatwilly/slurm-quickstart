@@ -13,9 +13,9 @@ from os import getenv
 import requests
 
 # ------------------ User-configurable variables (edit here) ------------------
-SLURM_CONTROLLER = "http://dev-slurm01:6820"
+SLURM_CONTROLLER = "http://localhost:6820"
 API_VERSION = "v0.0.40"
-TEMPORARY_ADDITIONS = " -A grp_rcadmins "          # extra sbatch params added during tests
+TEMPORARY_ADDITIONS = " -A root "          # extra sbatch params added during tests
 SBATCH_BEGIN = '--begin="now+1second"'             # when to begin job
 SBATCH_WRAP = '--wrap="sleep 1"'                   # wrapper for sbatch
 SCONTROL_CMD = ["scontrol", "token"]               # command used to fetch token
