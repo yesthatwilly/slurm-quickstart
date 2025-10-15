@@ -1,0 +1,27 @@
+#!/bin/bash
+# Configure JWT key and Slurm AuthAlt settings
+set -eo pipefail
+
+# Define the Slurm state directory (adjust if your configuration differs)
+STATE_DIR="/var/spool/slurm.state/statesave"
+JWT_KEY="${STATE_DIR}/jwt_hs256.key"
+CONF_FILE="/etc/slurm/slurm.conf"
+
+# --- Create directory structure for state and key ---
+mkdir -p "$STATE_DIR"
+
+# Generate a 256-bit random key (32 bytes) for JWT signing
+dd if=/dev/random of="$JWT_KEY" bs=32 count=1 status=none
+
+# --- Set ownership and permissions ---
+# Ensure only the slurm user can read the key; directory needs exec bits for traversal
+chown -R slurm:slurm "$STATE_DIR"
+chmod 0600 "$JWT_KEY"
+chmod 0755 "$STATE_DIR"
+
+# --- Update slurm.conf to enable JWT authentication ---
+# Replace or uncomment existing AuthAlt lines with correct values
+sed -i \
+  -e "s|^#\?AuthAltTypes=.*|AuthAltTypes=auth/jwt|" \
+  -e "s|^#\?AuthAltParameters=.*|AuthAltParameters=jwt_key=${JWT_KEY},disable_token_creation|" \
+  "$CONF_FILE"
