@@ -153,6 +153,21 @@ def expect_equal(assertions_dict):
         return wrapper
     return decorator
 
+def raise_with_message(exception_type, expected_message):
+    """Decorator that asserts a test raises `exception_type` with `expected_message`."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            with self.assertRaises(exception_type) as cm:
+                func(self, *args, **kwargs)
+            actual_message = str(cm.exception)
+            self.assertEqual(
+                actual_message, expected_message,
+                f"Expected {exception_type.__name__} message '{expected_message}', got '{actual_message}'"
+            )
+        return wrapper
+    return decorator
+
 # ---------------------------------------------------------------------------
 
 # --------------------------- Unit tests ------------------------------------
@@ -165,13 +180,14 @@ class TestSlurm(unittest.TestCase):
         pass
 
     # Basic test that checks a job is queued properly
+    @raise_with_message(SlurmSubmissionError, "sbatch: error: Batch job submission failed: Invalid qos specification")
     def test_sbatch_blank(self):
         self.details = run('')
 
     # Basic test that checks a job is queued properly with basic conditions met
     @common_slurm_checks
     def test_sbatch_with_common_checks(self):
-        self.details = run('')
+        self.details = run('-q public')
 
 # --------------------------- Entry point -----------------------------------
 
