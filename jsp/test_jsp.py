@@ -109,6 +109,26 @@ def common_slurm_checks(func):
 
     return wrapper
 
+def expect_tres(assertions_dict):
+    """Decorator to perform common checks in SLURM tests based on provided assertions."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            func(self, *args, **kwargs)  # Run the test
+            items = self.details['tres_req_str'].split(',')
+            parsed_dict = {key: value for key, value in (item.split('=') for item in items)}
+
+            for key, expected_value in assertions_dict.items():
+                with self.subTest(key=key):
+                    try:
+                        self.assertEqual(int(parsed_dict[key]), expected_value)
+                    except ValueError:
+                        # mem=2G -> [:-1] chops off 'G'
+                        self.assertEqual(int(parsed_dict[key][:-1]), expected_value)
+        return wrapper
+    return decorator
+
 def expect_equal(assertions_dict):
     """Decorator factory that checks a dictionary of expected values against self.details.
 
@@ -188,6 +208,12 @@ class TestSlurm(unittest.TestCase):
     @common_slurm_checks
     def test_sbatch_with_common_checks(self):
         self.details = run('-p general')
+
+    # reduces a request for 8 cores to 7 cores
+    @common_slurm_checks
+    @expect_tres({"cpu": 7})
+    def test_sbatch_with_common_checks(self):
+        self.details = run('-p general -c 8')
 
 # --------------------------- Entry point -----------------------------------
 
