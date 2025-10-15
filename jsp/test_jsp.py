@@ -180,14 +180,14 @@ class TestSlurm(unittest.TestCase):
         pass
 
     # Basic test that checks a job is queued properly
-    @raise_with_message(SlurmSubmissionError, "sbatch: error: Batch job submission failed: Invalid qos specification")
+    @raise_with_message(SlurmSubmissionError, "sbatch: error: Batch job submission failed: No partition specified or system default partition")
     def test_sbatch_blank(self):
         self.details = run('')
 
     # Basic test that checks a job is queued properly with basic conditions met
     @common_slurm_checks
     def test_sbatch_with_common_checks(self):
-        self.details = run('-q public')
+        self.details = run('-p general')
 
 # --------------------------- Entry point -----------------------------------
 
