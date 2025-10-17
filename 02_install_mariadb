@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: this script must be run as root (try using sudo)." >&2
+  exit 1
+fi
+
 # Install MariaDB server
 echo "Installing MariaDB server..."
 dnf install -y mariadb-server
