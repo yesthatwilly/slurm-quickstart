@@ -5,6 +5,12 @@
 
 set -e
 
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: this script must be run as root (try using sudo)." >&2
+  exit 1
+fi
+
 # Copy config file
 cp ./slurm.conf /etc/slurm/slurm.conf
 chown slurm:rocky /etc/slurm/slurm.conf
