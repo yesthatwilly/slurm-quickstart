@@ -1,83 +1,97 @@
-#!/bin/bash
-# 08_deploy_compute.sh
-# rsync slurm, copy munge.key, create /etc/default/slurmd (SLURMCTLD_HOST=<head_ip>),
-# and restart munge + slurmd on all lci-compute* hosts
+#!/usr/bin/env bash
+# 08_deploy_compute
+# Deploy slurm runtime, munge key, slurmd defaults and unit to lci-compute* nodes.
+# - Detects the head node's 192.* address (prefers 192.168.*)
+# - Creates /etc/default/slurmd containing SLURMCTLD_HOST=<head_ip>
+# - Rsyncs /opt/slurm, copies /etc/munge/munge.key, deploys slurmd.service (if present)
+# - Fixes permissions and restarts munge + slurmd on each compute node
+#
+# Usage: run as root (or a user that can SSH to remote root), from the directory
+# containing this script and optionally slurmd.service.
 set -euo pipefail
 
-HOSTS_FILE="/etc/hosts"
-LOCAL_SLURM_DIR="/opt/slurm"               # directory to rsync (adjust if needed)
+### --- Configuration (tweak if needed) ---
+HOSTS_FILE="/etc/hosts"              # file used to enumerate hosts
+LOCAL_SLURM_DIR="/opt/slurm"         # directory to rsync to remote /opt/
 LOCAL_MUNGE_KEY="/etc/munge/munge.key"
-SSH_USER="root"                            # change if you prefer different user
-SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+SSH_USER="root"                      # remote account (root recommended here)
+SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURMD_UNIT_LOCAL="${SCRIPT_DIR}/slurmd.service"  # optional, deploy if present
+THIS_SHORT="$(hostname -s)"
+THIS_FQDN="$(hostname -f || true)"
+TMPDIR="$(mktemp -d /tmp/08_deploy_compute.XXXXXX)"
+UMASK_ORIG="$(umask)"
+# ------------------------------------------------
 
-THIS_HOST="$(hostname -s)"
+trap 'rc=$?; umask "$UMASK_ORIG"; rm -rf "$TMPDIR"; exit $rc' EXIT
 
-# sanity checks
+# Helper: log
+log() { printf '%s %s\n' "$(date +"%F %T")" "$*"; }
+
+# Basic sanity checks
 if [[ ! -d "$LOCAL_SLURM_DIR" ]]; then
-    echo "Error: local slurm dir '$LOCAL_SLURM_DIR' does not exist." >&2
+    log "ERROR: local slurm dir '$LOCAL_SLURM_DIR' does not exist."
     exit 1
 fi
 if [[ ! -f "$LOCAL_MUNGE_KEY" ]]; then
-    echo "Error: local munge key '$LOCAL_MUNGE_KEY' does not exist." >&2
+    log "ERROR: local munge key '$LOCAL_MUNGE_KEY' does not exist."
     exit 1
 fi
 
-# gather compute hosts from /etc/hosts
-mapfile -t COMPUTE_HOSTS < <(awk '
-    $2 ~ /^lci-compute/ { print $2 }
-    { for (i=3; i<=NF; i++) if ($i ~ /^lci-compute/) print $i }
-' "$HOSTS_FILE" | sort -u)
+# Gather compute hosts from /etc/hosts (any word beginning with lci-compute)
+mapfile -t COMPUTE_HOSTS < <(awk '{
+    for (i=2;i<=NF;i++) if ($i ~ /^lci-compute/) print $i
+}' "$HOSTS_FILE" | sort -u)
 
 if [[ ${#COMPUTE_HOSTS[@]} -eq 0 ]]; then
-    echo "No lci-compute* hosts found in $HOSTS_FILE" >&2
+    log "ERROR: no lci-compute* hosts found in $HOSTS_FILE"
     exit 1
 fi
 
-echo "Found compute hosts: ${COMPUTE_HOSTS[*]}"
+log "Found compute hosts: ${COMPUTE_HOSTS[*]}"
 
 # --- Robust HEAD_IP detection ---
-HEAD_IP=""
-HEAD_LINE=""    # full /etc/hosts line chosen (for debugging / trace)
-
-# 1) collect all head hostnames from hosts file
+# Collect candidate head hostnames from hosts file (words starting with lci-head)
 mapfile -t HEAD_NAMES < <(awk '{
     for (i=2;i<=NF;i++) if ($i ~ /^lci-head/) print $i
 }' "$HOSTS_FILE" | sort -u)
 
 if [[ ${#HEAD_NAMES[@]} -eq 0 ]]; then
-    echo "ERROR: no hostnames beginning with 'lci-head' found in $HOSTS_FILE" >&2
+    log "ERROR: no hostnames beginning with 'lci-head' found in $HOSTS_FILE"
     exit 1
 fi
 
-echo "Detected head names in $HOSTS_FILE: ${HEAD_NAMES[*]}"
+log "Detected head names in $HOSTS_FILE: ${HEAD_NAMES[*]}"
 
-# helper function to search for an IP line matching a pattern and head name
+# Helper function: find a full hosts-file line that starts with a given IP regex
 _find_line_for_pattern() {
-    local pattern="$1"   # e.g. '^192\.168\.' or '^192\.'
+    local pat="$1"   # awk regex for $1 (IP) e.g. '^192\.168\.'
     for hn in "${HEAD_NAMES[@]}"; do
-        # look for a hosts-file line starting with pattern that contains the head-name word
-        # print first match and return
-        line="$(awk -v pat="$pattern" -v name="$hn" ' $1 ~ pat {
-            for (i=2;i<=NF;i++) if ($i == name) { print; exit }
-        }' "$HOSTS_FILE" || true)"
+        # look for hosts-file line whose IP matches pat and contains hn as a word
+        line="$(awk -v pat="$pat" -v name="$hn" '
+            $1 ~ pat {
+                for (i=2;i<=NF;i++) if ($i == name) { print; exit }
+            }
+        ' "$HOSTS_FILE" || true)"
         if [[ -n "$line" ]]; then
-            echo "$line"
+            printf '%s' "$line"
             return 0
         fi
     done
     return 1
 }
 
-# prefer 192.168.*
-if line="$( _find_line_for_pattern '^192\\.168\\.' )"; then
+HEAD_LINE=""
+# 1) prefer 192.168.*
+if line="$(_find_line_for_pattern '^192\\.168\\.')"; then
     HEAD_LINE="$line"
 else
-    # fallback: any 192.*
-    if line="$( _find_line_for_pattern '^192\\.' )"; then
+    # 2) any 192.*
+    if line="$(_find_line_for_pattern '^192\\.')" ; then
         HEAD_LINE="$line"
     else
-        # last resort: any IP for a head name (first occurrence)
-        # this will match the first hosts-file line containing a head-name
+        # 3) fallback: any hosts-file line that contains a lci-head* entry (first match)
         HEAD_LINE="$(awk '{
             for (i=2;i<=NF;i++) if ($i ~ /^lci-head/) { print; exit }
         }' "$HOSTS_FILE" || true)"
@@ -85,106 +99,145 @@ else
 fi
 
 if [[ -z "$HEAD_LINE" ]]; then
-    echo "ERROR: could not find any /etc/hosts line for lci-head* in $HOSTS_FILE" >&2
+    log "ERROR: could not find any /etc/hosts line for lci-head* in $HOSTS_FILE"
     exit 1
 fi
 
-# extract IP from HEAD_LINE (first whitespace-separated field)
+# Extract the IP (first whitespace-separated token)
 HEAD_IP="$(awk '{print $1; exit}' <<<"$HEAD_LINE")" || true
 
-echo "Chosen hosts-file line for SLURMCTLD_HOST:"
-echo "  $HEAD_LINE"
-echo "Using head IP for SLURMCTLD_HOST: $HEAD_IP"
-# --- end HEAD_IP detection ---
+log "Chosen hosts-file line for SLURMCTLD_HOST: $HEAD_LINE"
+log "Using head IP for SLURMCTLD_HOST: $HEAD_IP"
 
-# create local temporary defaults file
-TMP_DEFAULTS="$(mktemp /tmp/slurmd_defaults.XXXXXX)"
+# Create temporary defaults file (to be copied to each compute node)
+TMP_DEFAULTS="$TMPDIR/slurmd_defaults"
 cat > "$TMP_DEFAULTS" <<EOF
-# /etc/default/slurmd - created by 08_deploy_compute.sh
+# /etc/default/slurmd - created by 08_deploy_compute
 # Contains environment variables consumed by systemd unit EnvironmentFile
 SLURMCTLD_HOST=${HEAD_IP}
 EOF
-
 chmod 0644 "$TMP_DEFAULTS"
-echo "Local defaults file created at $TMP_DEFAULTS"
+log "Local defaults file created at $TMP_DEFAULTS"
 
-# iterate compute nodes and perform operations
+# If local slurmd.service exists, make it available to copy
+if [[ -f "$SLURMD_UNIT_LOCAL" ]]; then
+    log "Found local slurmd.service at $SLURMD_UNIT_LOCAL — it will be deployed to compute nodes."
+else
+    log "No local slurmd.service found at $SLURMD_UNIT_LOCAL — skipping unit deployment (assuming unit already on remote)."
+fi
+
+# Iterate compute nodes
 for host in "${COMPUTE_HOSTS[@]}"; do
-    if [[ "$host" == "$THIS_HOST" || "$host" == "$(hostname -f)" ]]; then
-        echo "Skipping local host: $host"
+    # skip the head node (if listed among compute hosts)
+    if [[ "$host" == "$THIS_SHORT" || "$host" == "$THIS_FQDN" || "$host" == "$(hostname -A 2>/dev/null | awk '{print $1}')" ]]; then
+        log "Skipping local host: $host"
         continue
     fi
 
-    echo
-    echo "=== Processing $host ==="
+    log "=== Processing $host ==="
 
     # 1) rsync slurm -> /opt/ on remote
-    echo "-> rsync $LOCAL_SLURM_DIR to ${SSH_USER}@${host}:/opt/"
-    rsync -av --progress -e "ssh $SSH_OPTS" "$LOCAL_SLURM_DIR" "${SSH_USER}@${host}:/opt/" || {
-        echo "ERROR: rsync to $host failed" >&2
+    log "-> rsync $LOCAL_SLURM_DIR -> ${SSH_USER}@${host}:/opt/"
+    if ! rsync -aHAX --delete --progress -e "ssh $SSH_OPTS" "$LOCAL_SLURM_DIR" "${SSH_USER}@${host}:/opt/"; then
+        log "ERROR: rsync to $host failed — skipping host"
         continue
-    }
+    fi
 
     # 2) copy munge key
-    echo "-> copying munge key to ${SSH_USER}@${host}:/etc/munge/munge.key"
-    rsync -av --progress -e "ssh $SSH_OPTS" "$LOCAL_MUNGE_KEY" "${SSH_USER}@${host}:/etc/munge/munge.key" || {
-        echo "ERROR: munge key copy to $host failed" >&2
+    log "-> copying munge key -> ${SSH_USER}@${host}:/etc/munge/munge.key"
+    if ! rsync -a --progress -e "ssh $SSH_OPTS" "$LOCAL_MUNGE_KEY" "${SSH_USER}@${host}:/etc/munge/munge.key"; then
+        log "ERROR: munge key copy to $host failed — skipping host"
         continue
-    }
+    fi
 
     # 3) copy slurmd defaults to /etc/default/slurmd
-    echo "-> deploying $TMP_DEFAULTS to ${SSH_USER}@${host}:/etc/default/slurmd"
-    rsync -av --progress -e "ssh $SSH_OPTS" "$TMP_DEFAULTS" "${SSH_USER}@${host}:/etc/default/slurmd" || {
-        echo "ERROR: defaults file copy to $host failed" >&2
+    log "-> deploying defaults -> ${SSH_USER}@${host}:/etc/default/slurmd"
+    if ! rsync -a --progress -e "ssh $SSH_OPTS" "$TMP_DEFAULTS" "${SSH_USER}@${host}:/etc/default/slurmd"; then
+        log "ERROR: defaults file copy to $host failed — skipping host"
         continue
-    }
+    fi
 
-    # 4) remote fix perms, verify md5, restart services
-    echo "-> setting remote permissions, verifying md5, and restarting munge + slurmd"
+    # 4) copy slurmd.service if present
+    if [[ -f "$SLURMD_UNIT_LOCAL" ]]; then
+        log "-> deploying slurmd.service -> ${SSH_USER}@${host}:/etc/systemd/system/slurmd.service"
+        if ! rsync -a --progress -e "ssh $SSH_OPTS" "$SLURMD_UNIT_LOCAL" "${SSH_USER}@${host}:/etc/systemd/system/slurmd.service"; then
+            log "WARNING: slurmd.service copy to $host failed — continuing with other steps"
+        else
+            # ensure unit file proper perms on remote later
+            unit_deployed=true
+        fi
+    else
+        unit_deployed=false
+    fi
+
+    # 5) remote fix perms, verify md5, enable/reload/restart services
+    log "-> setting remote permissions, verifying md5, and restarting munge + slurmd on $host"
+    # Use a heredoc for remote commands; keep it POSIX-ish and robust
     ssh $SSH_OPTS "${SSH_USER}@${host}" bash -eux <<'REMOTE'
 MUNGE_PATH="/etc/munge/munge.key"
 DEFAULTS_PATH="/etc/default/slurmd"
+UNIT_PATH="/etc/systemd/system/slurmd.service"
 
-# munge key
+# 1) munge key perms and restart
 if [ -f "$MUNGE_PATH" ]; then
     chown munge:munge "$MUNGE_PATH" || true
-    chmod 400 "$MUNGE_PATH" || true
+    chmod 0400 "$MUNGE_PATH" || true
     echo "Remote md5 for munge key:"
-    md5sum "$MUNGE_PATH"
+    if command -v md5sum >/dev/null 2>&1; then
+        md5sum "$MUNGE_PATH"
+    else
+        sha256sum "$MUNGE_PATH" || true
+    fi
     echo "Restarting munge service..."
-    systemctl restart munge
-    systemctl status munge --no-pager -l | head -n 10 || true
+    systemctl restart munge || { systemctl status munge --no-pager -l || true; exit 1; }
+    systemctl is-active --quiet munge && echo "munge active" || { echo "munge failed to start" >&2; systemctl status munge --no-pager -l || true; exit 1; }
 else
     echo "remote munge key not found: $MUNGE_PATH" >&2
     exit 2
 fi
 
-# slurmd defaults
+# 2) defaults file perms and show contents
 if [ -f "$DEFAULTS_PATH" ]; then
     chown root:root "$DEFAULTS_PATH" || true
     chmod 0644 "$DEFAULTS_PATH" || true
     echo "Remote contents of $DEFAULTS_PATH:"
-    sed -n '1,120p' "$DEFAULTS_PATH" || true
+    sed -n '1,200p' "$DEFAULTS_PATH" || true
 else
     echo "remote defaults file not found: $DEFAULTS_PATH" >&2
     exit 3
 fi
 
-# restart slurmd
-echo "Restarting slurmd service..."
+# 3) unit file perms if present
+if [ -f "$UNIT_PATH" ]; then
+    chown root:root "$UNIT_PATH" || true
+    chmod 0644 "$UNIT_PATH" || true
+fi
+
+# 4) systemd reload & slurmd restart
+echo "Daemon-reload, restart slurmd..."
 systemctl daemon-reload || true
-systemctl restart slurmd
-systemctl status slurmd --no-pager -l | head -n 12 || true
+# enable the unit if present
+if [ -f "$UNIT_PATH" ]; then
+    systemctl enable --now slurmd || true
+else
+    # try to restart anyway (unit may exist already on remote)
+    systemctl restart slurmd || true
+fi
+systemctl is-active --quiet slurmd && echo "slurmd active" || { echo "slurmd failed to start" >&2; systemctl status slurmd --no-pager -l || true; exit 4; }
 REMOTE
 
-    echo "Local md5 of munge key:"
-    md5sum "$LOCAL_MUNGE_KEY" || true
+    # 6) show local md5 for sanity
+    log "Local md5 of munge key:"
+    if command -v md5sum >/dev/null 2>&1; then
+        md5sum "$LOCAL_MUNGE_KEY" || true
+    else
+        sha256sum "$LOCAL_MUNGE_KEY" || true
+    fi
 
-    echo "Done with $host"
+    log "Done with $host"
+    echo
 done
 
-# cleanup
-rm -f "$TMP_DEFAULTS" || true
-
-echo
-echo "All done."
+# cleanup (trap will remove TMPDIR)
+umask "$UMASK_ORIG"
+log "All done."
