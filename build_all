@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # build_all - run the quickstart steps in order
 # Usage: ./build_all <arg-for-04_build_slurm>
 # All steps run with sudo except step 04 (04_build_slurm) which is run as the calling user
@@ -15,46 +15,54 @@ fi
 BUILD_ARG="$1"
 
 # Make sure the scripts are executable (idempotent)
-chmod +x 01_install_deps 02_install_mariadb 03_prepare_system 04_build_slurm 05_enable_slurmdbd 06_enable_slurmctld 07_update_slurmconf 09_enable_slurmd
+chmod +x \
+  01_install_deps \
+  02_prepare_system \
+  03_install_mariadb \
+  04_build_slurm \
+  05_update_slurmconf \
+  06_enable_slurmdbd \
+  07_enable_slurmctld \
+  08_deploy_compute \
+  10_enable_slurmrestd
 
 echo "=== Step 01: Install dependencies (runs as sudo) ==="
 sudo bash ./01_install_deps
 
-echo "=== Step 02: Install MariaDB (runs as sudo) ==="
-sudo bash ./02_install_mariadb
+echo "=== Step 02: Prepare system (runs as sudo) ==="
+sudo bash ./02_prepare_system
 
-echo "=== Step 03: Prepare system (runs as sudo) ==="
-sudo bash ./03_prepare_system
+echo "=== Step 03: Install MariaDB (runs as sudo) ==="
+sudo bash ./03_install_mariadb
 
 echo "=== Step 04: Build Slurm (runs as normal user) ==="
 bash ./04_build_slurm "${BUILD_ARG}"
 
-echo "=== Step 04b: Create /opt/slurm/current symlink ==="
+echo "=== Step 04b: Create /opt/slurm/current symlink (runs as sudo) ==="
 SLURM_BASE="/opt/slurm"
-sudo mkdir -p $SLURM_BASE
-sudo chown -R slurm:rocky $SLURM_BASE
+sudo mkdir -p "${SLURM_BASE}"
+# keep ownership change as in original flow; adjust if you prefer a different group/user
+sudo chown -R slurm:rocky "${SLURM_BASE}" || true
 
-LATEST_BUILD=$(ls -1d ${SLURM_BASE}/${BUILD_ARG}-* 2>/dev/null | sort -V | tail -n 1)
+LATEST_BUILD=$(ls -1d "${SLURM_BASE}/${BUILD_ARG}-"* 2>/dev/null | sort -V | tail -n 1 || true)
 
-if [ -z "$LATEST_BUILD" ]; then
+if [ -z "${LATEST_BUILD}" ]; then
   echo "WARNING: Could not find a Slurm install directory matching ${BUILD_ARG}-* under ${SLURM_BASE}" >&2
 else
-  echo "Creating symlink /opt/slurm/current -> $LATEST_BUILD"
-  sudo ln -sfn "$LATEST_BUILD" "${SLURM_BASE}/current"
+  echo "Creating symlink /opt/slurm/current -> ${LATEST_BUILD}"
+  sudo ln -sfn "${LATEST_BUILD}" "${SLURM_BASE}/current"
 fi
 
-# Determine host role
-#HOSTNAME=$(hostname)
-#if [[ "$HOSTNAME" == *head* ]]; then
-#  echo "=== Hostname contains 'head': enabling slurmdbd and slurmctld ==="
-#  echo "=== Step 05: Enable slurmdbd (runs as sudo) ==="
-#  sudo bash ./05_enable_slurmdbd
-#
-#  echo "=== Step 06: Enable slurmctld (runs as sudo) ==="
-#  sudo bash ./06_enable_slurmctld
-#else
-#  echo "=== Hostname does not contain 'head': enabling slurmd ==="
-#  sudo bash ./07_enable_slurmd
-#fi
+echo "=== Step 05: Update slurm.conf (runs as sudo) ==="
+sudo bash ./05_update_slurmconf
 
-echo "=== All steps completed successfully ==="
+echo "=== Step 06: Enable slurmdbd (runs as sudo) ==="
+sudo bash ./06_enable_slurmdbd
+
+echo "=== Step 07: Enable slurmctld (runs as sudo) ==="
+sudo bash ./07_enable_slurmctld
+
+echo "=== Step 08: Deploy compute nodes (runs as sudo) ==="
+sudo bash ./08_deploy_compute
+
+echo "All steps completed."
