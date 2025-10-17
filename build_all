@@ -54,7 +54,7 @@ else
 fi
 
 echo "=== Step 05: Update slurm.conf (runs as sudo) ==="
-sudo bash ./05_update_slurmconf
+bash ./05_update_slurmconf
 
 echo "=== Step 06: Enable slurmdbd (runs as sudo) ==="
 sudo bash ./06_enable_slurmdbd
