@@ -10,6 +10,12 @@
 # containing this script and optionally slurmd.service.
 set -euo pipefail
 
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: this script must be run as root (try using sudo)." >&2
+  exit 1
+fi
+
 ### --- Configuration (tweak if needed) ---
 HOSTS_FILE="/etc/hosts"              # file used to enumerate hosts
 LOCAL_SLURM_DIR="/opt/slurm"         # directory to rsync to remote /opt/
