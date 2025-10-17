@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Update slurm.conf in the current directory as a regular user.
+SLURM_CONF="./slurm.conf"
+HOSTS_FILE="/etc/hosts"
+
+cleanup() { [[ -n "${tmpfile:-}" && -f "${tmpfile}" ]] && rm -f "${tmpfile}"; }
+trap cleanup EXIT
+
+# --- Host info ---------------------------------------------------------------
+HOSTSHORT="$(hostname -s)"
+IPADDR="$(ip -4 -o addr show scope global 2>/dev/null \
+         | awk '{print $4}' | cut -d/ -f1 | grep -v '^127\.' | head -n1 || true)"
+
+if [[ -z "${IPADDR}" ]]; then
+  echo "ERROR: could not determine primary IPv4 address." >&2
+  exit 1
+fi
+
+# --- Gather compute hosts ----------------------------------------------------
+mapfile -t COMPUTE_HOSTS < <(
+  awk '
+    $0 ~ /^[[:space:]]*#/ { next }
+    {
+      for (i=2; i<=NF; i++) if ($i ~ /^lci-compute/) print $i
+    }
+  ' "${HOSTS_FILE}" | sort -u
+)
+
+if [[ ${#COMPUTE_HOSTS[@]} -eq 0 ]]; then
+  echo "No lci-compute* entries found in ${HOSTS_FILE}. Nothing to do." >&2
+  exit 0
+fi
+
+# --- Build node expression ---------------------------------------------------
+declare -A nums_by_base
+for hn in "${COMPUTE_HOSTS[@]}"; do
+  if [[ "${hn}" =~ ^(.+)-([0-9]+)$ ]]; then
+    base="${BASH_REMATCH[1]}"
+    num="${BASH_REMATCH[2]}"
+    nums_by_base["$base"]+="${num} "
+  else
+    nums_by_base["$hn"]+=""
+  fi
+done
+
+parts=()
+for base in "${!nums_by_base[@]}"; do
+  nums_str="$(echo "${nums_by_base[$base]}" | xargs || true)"
+  if [[ -z "${nums_str}" ]]; then
+    parts+=("${base}")
+    continue
+  fi
+
+  read -r -a arr <<< "${nums_str}"
+  IFS=$'\n' sorted_unique=($(printf '%s\n' "${arr[@]}" | sort -n -u))
+  unset IFS
+  width="${#sorted_unique[0]}"
+
+  ranges=()
+  start="${sorted_unique[0]}"
+  prev="${start}"
+  for ((i=1;i<${#sorted_unique[@]};i++)); do
+    cur="${sorted_unique[i]}"
+    if (( cur == prev + 1 )); then
+      prev="$cur"
+      continue
+    fi
+    if (( start == prev )); then
+      ranges+=( "$(printf "%0${width}d" "${start}")" )
+    else
+      ranges+=( "$(printf "%0${width}d" "${start}")-$(printf "%0${width}d" "${prev}")" )
+    fi
+    start="$cur"; prev="$cur"
+  done
+  if (( start == prev )); then
+    ranges+=( "$(printf "%0${width}d" "${start}")" )
+  else
+    ranges+=( "$(printf "%0${width}d" "${start}")-$(printf "%0${width}d" "${prev}")" )
+  fi
+
+  IFS=, joined="${ranges[*]}"; unset IFS
+  parts+=( "${base}-[${joined}]" )
+done
+
+IFS=, NODE_EXPR="$(printf "%s\n" "${parts[@]}" | sort | paste -sd, -)"
+unset IFS
+echo "Computed node expression(s): ${NODE_EXPR}"
+
+# --- Edit slurm.conf atomically ---------------------------------------------
+tmpfile="$(mktemp)"
+awk -v SLCT="SlurmctldHost=${HOSTSHORT}(${IPADDR})" \
+    -v ACHK="AccountingStorageHost=${HOSTSHORT}" \
+    -v NEXPR="${NODE_EXPR}" '
+  BEGIN { acct_seen=0 }
+  {
+    if ($0 ~ /^[[:space:]]*#/) { print; next }
+
+    if ($0 ~ /^[[:space:]]*SlurmctldHost=/) {
+      sub(/^[[:space:]]*SlurmctldHost=.*/, SLCT); print; next
+    }
+
+    if ($0 ~ /^[[:space:]]*AccountingStorageHost=/) {
+      sub(/^[[:space:]]*AccountingStorageHost=.*/, ACHK)
+      acct_seen=1; print; next
+    }
+
+    if ($0 ~ /^[[:space:]]*NodeName=lci-compute/) {
+      match($0,/^[[:space:]]*/); ind = substr($0, RSTART, RLENGTH)
+      print ind "NodeName=" NEXPR " \\"; next
+    }
+
+    if ($0 ~ /^[[:space:]]*Nodes=lci-compute/) {
+      match($0,/^[[:space:]]*/); ind = substr($0, RSTART, RLENGTH)
+      print ind "Nodes=" NEXPR " \\"; next
+    }
+
+    print
+  }
+  END { if (!acct_seen) { print ""; print ACHK } }
+' "${SLURM_CONF}" > "${tmpfile}"
+
+mv "${tmpfile}" "${SLURM_CONF}"
+tmpfile=""  # skip cleanup after mv
+
+echo "Updated ${SLURM_CONF}:"
+grep -n -E "^[[:space:]]*SlurmctldHost|^[[:space:]]*AccountingStorageHost|^[[:space:]]*NodeName=|^[[:space:]]*Nodes=" "${SLURM_CONF}" || true
