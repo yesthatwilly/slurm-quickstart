@@ -31,13 +31,8 @@ if ! grep -q -- '--conf-server' "$SERVICE_FILE"; then
     exit 1
 fi
 
-# Substitute the IP in the --conf-server argument
-sed -E "s|(--conf-server )[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|\1$NEW_IP|" "$SERVICE_FILE" > "$TMP_FILE"
-
 # Replace the original file
 mv "$TMP_FILE" "$SERVICE_FILE"
-
-echo "Updated $SERVICE_FILE to use --conf-server $NEW_IP"
 
 # ------------------------------------------------------------------
 # Install slurmd.service
