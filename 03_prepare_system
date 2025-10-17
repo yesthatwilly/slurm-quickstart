@@ -5,6 +5,12 @@
 
 set -e  # Exit immediately on error
 
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: this script must be run as root (try using sudo)." >&2
+  exit 1
+fi
+
 echo "=== Creating Slurm system group and user ==="
 
 # Create the 'slurm' group (only if GID 600 is not already in use)
