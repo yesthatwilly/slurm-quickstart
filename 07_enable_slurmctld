@@ -1,9 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ------------------------------------------------------------------
-# Install slurm.conf and slurmctld.service
+# Install /etc/slurm/*.conf and service units, enable slurmctld
+# Assumes slurm.conf already prepared/edited by 07_update_slurmconf.
 # ------------------------------------------------------------------
 
-set -e
+set -euo pipefail
 
 # Require root privileges
 if [[ $EUID -ne 0 ]]; then
@@ -11,64 +12,41 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# Copy config file
+# Ensure target directory exists
+mkdir -p /etc/slurm
+
+# Copy config files from current working dir -> preserve perms for slurm user group
 cp ./slurm.conf /etc/slurm/slurm.conf
-chown slurm:rocky /etc/slurm/slurm.conf
+chown slurm:slurm /etc/slurm/slurm.conf
 chmod 664 /etc/slurm/slurm.conf
 
+# Ensure job_container.conf exists (empty if not present)
 touch /etc/slurm/job_container.conf
-chown slurm:rocky /etc/slurm/job_container.conf
+chown slurm:slurm /etc/slurm/job_container.conf
 chmod 664 /etc/slurm/job_container.conf
 
-# Determine local hostname (short form)
-HOSTNAME=$(hostname -s)
+echo "Installed /etc/slurm/*.conf (owned by slurm:slurm, mode 664)."
 
-# Get IPv4 address for eth0
-IPADDR=$(ip -4 addr show eth0 | awk '/inet / {print $2}' | cut -d/ -f1)
+# NOTE: SlurmctldHost and AccountingStorageHost are intentionally NOT modified here.
+# Those values should be established by 07_update_slurmconf (idempotent, machine-local edits).
 
-# Ensure both values were retrieved
-if [[ -z "$HOSTNAME" || -z "$IPADDR" ]]; then
-    echo "Error: could not determine hostname or IP for eth0."
-    exit 1
-fi
-
-# File in current directory
-CONF="/etc/slurm/slurm.conf"
-
-# Replace existing SlurmctldHost line or append if missing
-if grep -q '^SlurmctldHost=' "$CONF"; then
-    sed -i "s|^SlurmctldHost=.*|SlurmctldHost=${HOSTNAME}(${IPADDR})|" "$CONF"
-else
-    echo "SlurmctldHost=${HOSTNAME}(${IPADDR})" >> "$CONF"
-fi
-
-echo "Updated SlurmctldHost to ${HOSTNAME}(${IPADDR}) in $(realpath "$CONF")"
-
-# Replace existing AccountingStorageHost line or append if missing
-if grep -q '^AccountingStorageHost=' "$CONF"; then
-    sed -i "s|^AccountingStorageHost=.*|AccountingStorageHost=${HOSTNAME}|" "$CONF"
-else
-    echo "AccountingStorageHost=${HOSTNAME}" >> "$CONF"
-fi
-
-echo "Updated AccountingStorageHost to ${HOSTNAME} in $(realpath "$CONF")"
-
-# Copy systemd unit file
+# Install systemd unit files
 cp ./slurmctld.service /etc/systemd/system/slurmctld.service
 cp ./slurmrestd.service /etc/systemd/system/slurmrestd.service
 
-# Reload systemd so it sees the new unit
+# Reload systemd to pick up new units
 systemctl daemon-reload
 
-# Check for slurmdbd binary before enabling service
+# Enable and start slurmctld if binary is present
 if [ -x /opt/slurm/current/sbin/slurmctld ]; then
-    echo "Found /opt/slurm/current/sbin/slurmctld"
-    echo "Enabling and starting slurmctld..."
+    echo "Found /opt/slurm/current/sbin/slurmctld; enabling and starting slurmctld..."
     systemctl enable --now slurmctld
     echo "slurmctld enabled successfully."
 else
-    echo "WARNING: /opt/slurm/current/sbin/slurmctld not found."
-    echo "You likely need to create a symlink to your installed Slurm version, e.g.:"
-    echo "  ln -s /opt/slurm/25.05.3-20251003 /opt/slurm/current"
-    echo "Once the symlink exists, rerun: systemctl enable --now slurmctld"
+    cat <<'MSG'
+WARNING: /opt/slurm/current/sbin/slurmctld not found.
+Create a symlink or install Slurm, for example:
+  ln -s /opt/slurm/25.05.3-20251003 /opt/slurm/current
+Then rerun: systemctl enable --now slurmctld
+MSG
 fi
