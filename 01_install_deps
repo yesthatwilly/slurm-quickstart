@@ -3,6 +3,12 @@
 
 set -euo pipefail
 
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: this script must be run as root (try using sudo)." >&2
+  exit 1
+fi
+
 echo "Starting installation of Slurm build dependencies via dnf..."
 # Install munge-devel for Slurm auth.
 dnf install -y munge munge-devel
