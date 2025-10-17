@@ -2,6 +2,12 @@
 # Configure JWT key and Slurm AuthAlt settings
 set -eo pipefail
 
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Error: this script must be run as root (try using sudo)." >&2
+  exit 1
+fi
+
 # Define the Slurm state directory (adjust if your configuration differs)
 STATE_DIR="/var/spool/slurm.state/statesave"
 JWT_KEY="${STATE_DIR}/jwt_hs256.key"
