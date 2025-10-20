@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# Run with sudo
+
+# 1. Create an account (e.g., "hpc" as the top-level project/account)
+/opt/slurm/current/bin/sacctmgr add account lci Description="lci hpc account" Organization="lci"
+
+# 2. Create the user "rocky" and associate it with that account
+/opt/slurm/current/bin/sacctmgr add user rocky Account=lci DefaultAccount=lci
+
+# 3. (Optional) Verify the user and account association
+/opt/slurm/current/bin/sacctmgr show user withassoc format=User,DefaultAccount,Account,Cluster
+
+# 4. (Optional) Assign QoS or limits if you use them
+/opt/slurm/current/bin/sacctmgr modify user rocky set QOS=normal
